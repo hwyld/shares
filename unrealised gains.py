@@ -4,6 +4,7 @@ import yfinance as yf       # Yahoo Finance API
 import numpy as np          # Numpy for numerical computing
 import openpyxl as open     # Openpyxl for reading excel files
 
+
 ## Creating the Portfolio ##
 
 # Convert the Excel file to CSV
@@ -15,6 +16,10 @@ trades_df = pd.read_csv('AllTradesReport.csv')
 
 # Convert the 'Date' column to datetime format and store it as 'Trade Date'
 trades_df['Trade Date'] = pd.to_datetime(trades_df['Date'])
+
+# Get the start and end date
+start_date = trades_df['Date'].min().strftime('%Y-%m-%d')
+end_date = trades_df['Date'].max().strftime('%Y-%m-%d')
 
 # Load the portfolio data
 portfolio_df = pd.read_csv('PortfolioReport-Equities.csv')
@@ -80,10 +85,54 @@ print(new_trades_df)
 print(portfolio_df)
 print(trades_df)
 
-## Fetch prices from Yfinance ##
+#PORTFOLIO AS AT DATE#
 
-#### WANT TO UPDATE THIS TO GET 1 YEAR OF DATA FOR EACH TICKER ####
-#### ALSO WANT TO RUN A MTM ON THE PORTFOLIO ####
+
+
+
+## TRACK CASH BALANCE , DIVIDENDS , INTEREST PAID , WITHHOLDING TAX##
+
+# Load the cash transactions data
+cash_df = pd.read_csv('CashTransactionSummary.csv')
+
+# Convert the 'Date' column to datetime format
+cash_df['Date'] = pd.to_datetime(cash_df['Date'], dayfirst=True)
+
+
+# Initialize the new columns
+cash_df['Interest'] = 0
+cash_df['Dividends'] = 0
+cash_df['Dividends Security Code'] = ''
+cash_df['Tax'] = 0
+cash_df['Bank Transfers'] = 0
+
+# Iterate through each cash transaction
+for i, row in cash_df.iterrows():
+    if 'MACQUARIE CMA INTEREST PAID' in row['Description']:
+        cash_df.loc[i, 'Interest'] = row['Credit $']
+    elif 'DIV' in row['Description']:
+        cash_df.loc[i, 'Dividends'] = row['Credit $']
+        cash_df.loc[i, 'Dividends Security Code'] = row['Description'].split(" ")[0]
+    elif 'AUSTRALIAN RESIDENT WITHHOLDING TAX' in row['Description']:
+        cash_df.loc[i, 'Tax'] = row['Debit $']
+    elif 'TRANSACT FUNDS TFR' in row['Description']:
+        cash_df.loc[i, 'Bank Transfers'] = row['Credit $'] - row['Debit $']
+
+# Sum the dividends for each security code
+dividends_sum = cash_df.groupby('Dividends Security Code')['Dividends'].sum()
+
+# Convert the Series to a DataFrame
+dividends_df = dividends_sum.reset_index()
+
+# Rename the columns to match the portfolio dataframe
+dividends_df.columns = ['Security Code', 'Dividends']
+
+print(cash_df)
+print('hello')
+
+
+
+## Fetch prices from Yfinance ##
 
 # Create empty lists to store the Yahoo Finance tickers, latest prices, and exception tickers
 yahoo_finance_tickers = []
@@ -115,7 +164,7 @@ print(yahoo_finance_tickers_exceptions)
 
 # Export the list of exception tickers to a CSV file
 #
-portfolio_df.to_csv('ticker_exceptions_market_prices.csv', index=False)
+portfolio_df.to_csv('ticker_exceptions.csv', index=False)
 
 # Load the exception prices from the separate csv file
 #exception_prices_df = pd.read_csv('ticker_exceptions_market_prices.csv')
@@ -137,9 +186,6 @@ portfolio_df['Latest Price $'] = latest_prices
 # Create a new column to indicate whether each ticker is an exception
 portfolio_df['Is Exception'] = portfolio_df['Yahoo Finance Ticker'].isin(yahoo_finance_tickers_exceptions)
 
-# Calculate the starting value (Quantity * Average Cost $)
-#portfolio_df['Starting Value $'] = portfolio_df['Quantity'] * portfolio_df['Average Cost $']
-
 # Calculate the unrealised gains and losses (Quantity * Latest Price $ - Starting Value $)
 portfolio_df['Unrealised Gain/Loss $'] = portfolio_df['Quantity'] * portfolio_df['Latest Price $'] - portfolio_df['Starting Value $']
 
@@ -149,8 +195,60 @@ portfolio_df['Current Market Value $'] = portfolio_df['Quantity'] * portfolio_df
 # Calcualte current weights using Market Value $ / Total Market Value $ 
 portfolio_df['Current Weights'] = portfolio_df['Current Market Value $'] / portfolio_df['Current Market Value $'].sum()
 
-# Add a row with the sum of 'Starting Value $', 'Unrealised Gain/Loss $', 'Market Value $', and 'Current Weights'
-portfolio_df.loc['Total'] = pd.Series(portfolio_df[['Starting Value $','Cost Value $', 'Unrealised Gain/Loss $', 'Market Value $', 'Current Weights']].sum())
+#### DIVIDENDS FROM YFINANCE ####
+# Create an empty DataFrame to store the dividends data
+dividends_df_yfinance = pd.DataFrame()
+
+# Loop over each row in the dataframe to fetch the dividends from Yahoo Finance
+for index, row in portfolio_df.iterrows():
+    try:
+        ticker = yf.Ticker(row['Yahoo Finance Ticker'])
+        dividends = ticker.dividends.loc[start_date:end_date]
+        temp_df = pd.DataFrame(dividends)
+        temp_df['Yahoo Finance Ticker'] = row['Yahoo Finance Ticker']
+        dividends_df_yfinance = pd.concat([dividends_df_yfinance, temp_df])
+    except:
+        pass
+
+# Rename the columns
+dividends_df_yfinance.columns = ['Dividends', 'Yahoo Finance Ticker']
+
+# Export the dataframe to a CSV file
+dividends_df_yfinance.to_csv('dividends_portfolio.csv', index=False)
+
+# Sum the dividends for each Yahoo Finance Ticker
+dividends_df_yfinance = dividends_df.groupby('Yahoo Finance Ticker')['Dividends'].sum().reset_index()
+
+# Set 'Yahoo Finance Ticker' as the index in both dataframes
+portfolio_df.set_index('Yahoo Finance Ticker', inplace=True)
+dividends_df_yfinance.set_index('Yahoo Finance Ticker', inplace=True)
+
+# Merge the dividends_df_yfinance with portfolio_df
+portfolio_df = pd.merge(portfolio_df, dividends_df_yfinance, left_index=True, right_index=True, how='left')
+
+# Reset the index
+portfolio_df.reset_index(inplace=True)
+
+# Calculate the dividends (Quantity * Dividends)
+portfolio_df['Dividends'] = portfolio_df['Quantity'] * portfolio_df['Dividends']
+
+# Fill NaN values with 0
+portfolio_df['Dividends'] = portfolio_df['Dividends'].fillna(0)
+
+# Merge the dividends dataframe with the portfolio dataframe where yfinance doesn't cover the dividends
+# portfolio_df = pd.merge(portfolio_df, dividends_df, on='Security Code', how='left')
+
+# Now merge the 'Dividends' from dividends_df into portfolio_df where 'Dividends' in portfolio_df is 0
+portfolio_df.loc[portfolio_df['Dividends'] == 0, 'Dividends'] = portfolio_df['Security Code'].map(dividends_df.set_index('Security Code')['Dividends'])
+
+# Fill NaN values with 0
+portfolio_df['Dividends'] = portfolio_df['Dividends'].fillna(0)
+
+
+#### Export the Portfolio ####
+
+# Add a row with the sum of 'Starting Value $', 'Unrealised Gain/Loss $', 'Market Value $', 'Current Weights', 'Dividends'
+portfolio_df.loc['Total'] = pd.Series(portfolio_df[['Starting Value $','Cost Value $', 'Unrealised Gain/Loss $', 'Market Value $', 'Current Weights','Dividends']].sum())
 
 # Display the dataframe
 print(portfolio_df)
