@@ -17,12 +17,18 @@ trades_df = pd.read_csv('AllTradesReport.csv')
 # Convert the 'Date' column to datetime format and store it as 'Trade Date'
 trades_df['Trade Date'] = pd.to_datetime(trades_df['Date'])
 
+# Convert 'Date' column to datetime format before calling strftime
+trades_df['Date'] = pd.to_datetime(trades_df['Date'])
+
 # Get the start and end date
 start_date = trades_df['Date'].min().strftime('%Y-%m-%d')
 end_date = trades_df['Date'].max().strftime('%Y-%m-%d')
 
 # Load the portfolio data
-portfolio_df = pd.read_csv('PortfolioReport-Equities.csv')
+# Specify the columns to be read
+columns_to_read = ["Security Code", "Company Name", "Quantity", "Last Price", "Average Cost $", "Market Value $"]
+portfolio_df = pd.read_csv('PortfolioReport-Equities.csv', usecols=columns_to_read)
+#portfolio_df = pd.read_csv('PortfolioReport-Equities.csv')
 portfolio_df['Realised Gain/Loss $'] = 0  # Initialize the new column with zeros
 portfolio_df['Starting Value $'] = portfolio_df['Quantity'] * portfolio_df['Average Cost $']  # Define the starting value
 

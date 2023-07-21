@@ -1,5 +1,8 @@
-import yfinance as yf
-import pandas as pd
+import pandas as pd         # Pandas for data manipulation
+import yfinance as yf       # Yahoo Finance API
+import numpy as np          # Numpy for numerical computing
+import openpyxl as open     # Openpyxl for reading excel files
+
 
 ## Fetch prices from Yfinance ##
 
