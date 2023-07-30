@@ -88,12 +88,87 @@ sales_df.loc['Total'] = pd.Series(sales_df[['Realised Gain/Loss $','Sale Amount'
 sales_df.to_csv('sales_data.csv', index=False)
 
 print(new_trades_df)
+print(sales_df)
 print(portfolio_df)
 print(trades_df)
+print('Hello')
 
 #PORTFOLIO AS AT DATE#
 
+# Add 'Starting Value $' column to new_trades_df
+new_trades_df['Starting Value $'] = new_trades_df['Cost Value $'] + new_trades_df['Brokerage']
+print(new_trades_df)
+# Add 'Cost Value $' and 'Brokerage' columns to portfolio_df and fill them with zeros
+portfolio_df['Cost Value $'] = 0
+portfolio_df['Brokerage'] = 0
 
+# Merge portfolio_df and new_trades_df
+merged_portfolio_df = pd.concat([portfolio_df, new_trades_df], ignore_index=True)
+print(merged_portfolio_df)
 
+# Replace 'Starting Value $' column in merged_portfolio_df with 'Cost Value $' column
+#merged_portfolio_df['Starting Value $'] = merged_portfolio_df['Cost Value $']
+
+# Print the merged dataframe
+#print(merged_portfolio_df)
+
+## REMOVING DUPLICATES ##
+# Convert 'Purchase Date' to datetime if it's not already
+merged_portfolio_df['Purchase Date'] = pd.to_datetime(merged_portfolio_df['Purchase Date'])
+
+# Group by 'Security Code', sum numerical columns, calculate weighted average of 'Average Cost $', and keep the earliest 'Purchase Date'
+grouped_df = merged_portfolio_df.groupby('Security Code').apply(lambda x: pd.Series({
+    'Quantity': x['Quantity'].sum(),
+    'Average Cost $': (x['Average Cost $'] * x['Quantity']).sum() / x['Quantity'].sum() if x['Quantity'].sum() != 0 else 0,
+    'Cost Value $': x['Cost Value $'].sum(),
+    'Brokerage': x['Brokerage'].sum(),
+    'Starting Value $': x['Starting Value $'].sum(),
+    'Purchase Date': x['Purchase Date'].min()
+}))
+
+# Reset the index to turn 'Security Code' back into a column
+grouped_df = grouped_df.reset_index()
+
+print(grouped_df)
+
+# YAHOO FINANCE TICKERS #
+
+# Create empty dataframes to store the historical data
+#yahoo_tickers_df = pd.DataFrame()
+# Append '.AX' to each 'Security Code' in the dataframe to create 'Yahoo Finance Ticker'
+grouped_df['Yahoo Finance Ticker'] = grouped_df['Security Code'] + '.AX'
+
+# HISTORIC DATA FROM YFINANCE #
+
+# Create empty dataframes to store the historical data
+close_df = pd.DataFrame()
+dividends_df = pd.DataFrame()
+beta_df = pd.DataFrame()
+volume_df = pd.DataFrame()
+ticker_exceptions = []
+
+# Loop over each ticker in the dataframe
+for ticker in grouped_df['Yahoo Finance Ticker']:
+    # Fetch the historical data
+    data = yf.download(ticker, start=start_date, end=end_date)
+
+     # Check if the data is empty
+    if data.empty:
+        ticker_exceptions.append(ticker)
+        continue
+    
+    # Append the data to the respective dataframe
+    close_df[ticker] = data['Close']
+    #dividends_df[ticker] = data['Dividends']
+    #beta_df[ticker] = data['Beta (5Y Monthly)']
+    volume_df[ticker] = data['Volume']
+
+# Export the ticker exceptions to a CSV file
+pd.Series(ticker_exceptions).to_csv('ticker_exceptions.csv', index=False)
+# Export the dataframes to CSV files
+close_df.to_csv('close.csv')
+#dividends_df.to_csv('dividends.csv')
+#beta_df.to_csv('beta.csv')
+volume_df.to_csv('volume.csv')
 
 
