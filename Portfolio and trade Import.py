@@ -172,3 +172,42 @@ close_df.to_csv('close.csv')
 volume_df.to_csv('volume.csv')
 
 
+## NEED TO THEN ADD HOW TO SOURCE PRICES FOR MISSING TICKERS ##
+
+## CHARTING ##
+
+## MINIMUM VARIANCE PORTFOLIO ##
+
+from scipy.optimize import minimize
+
+# Calculate daily returns
+returns = close_df.pct_change()
+
+# Define the objective function
+def portfolio_variance(weights, returns):
+    # Weights should sum to 1
+    weights = np.array(weights)
+    portfolio_return = np.sum(returns.mean() * weights) * 252
+    portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(returns.cov() * 252, weights)))
+    return portfolio_volatility
+
+# Constraints
+cons = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+
+# Bounds
+bounds = tuple((0, 1) for x in range(len(returns.columns)))
+
+# Initial guess (equal distribution)
+init_guess = [1/len(returns.columns) for x in range(len(returns.columns))]
+
+# Run the optimizer
+opts = minimize(portfolio_variance, init_guess, args=(returns), method='SLSQP', bounds=bounds, constraints=cons)
+
+# Get the optimal weights
+min_var_weights = opts.x
+print(min_var_weights)
+
+# Add the weights to the grouped_df DataFrame
+grouped_df['MinVar Weights'] = min_var_weights
+
+print(grouped_df)
